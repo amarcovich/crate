@@ -24,14 +24,18 @@ package io.crate.planner.consumer;
 
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
-import io.crate.analyze.OrderBy;
-import io.crate.analyze.UnionSelect;
+import io.crate.analyze.*;
 import io.crate.analyze.relations.AnalyzedRelation;
+import io.crate.analyze.relations.AnalyzedRelationVisitor;
+import io.crate.analyze.relations.QueriedDocTable;
 import io.crate.analyze.relations.QueriedRelation;
 import io.crate.analyze.symbol.Symbol;
 import io.crate.planner.Limits;
 import io.crate.planner.Merge;
 import io.crate.planner.Plan;
+import io.crate.planner.fetch.FetchPushDown;
+import io.crate.planner.node.ExecutionPhases;
+import io.crate.planner.node.dql.QueryThenFetch;
 import io.crate.planner.node.dql.UnionPhase;
 import io.crate.planner.node.dql.UnionPlan;
 import io.crate.planner.projection.Projection;
@@ -54,7 +58,14 @@ class UnionConsumer implements Consumer {
         private static final Visitor INSTANCE = new Visitor();
 
         @Override
-        public Plan visitUnionSelect(UnionSelect unionSelect, ConsumerContext context) {
+        public Plan visitTwoRelationsUnion(TwoRelationsUnion twoRelationsUnion, ConsumerContext context) {
+            // Currently we only support UNION ALL so it's ok to flatten the union pairs
+            UnionFlatteningVisitorContext visitorContext = new UnionFlatteningVisitorContext();
+            UnionFlatteningVisitor.INSTANCE.process(twoRelationsUnion, visitorContext);
+            UnionSelect unionSelect = new UnionSelect(visitorContext.relations, twoRelationsUnion.querySpec());
+
+            FetchPushDown.Builder fetchPhaseBuilder = FetchPushDown.pushDown(unionSelect);
+
             Limits limits = context.plannerContext().getLimits(unionSelect.querySpec());
             List<Plan> subPlans = new ArrayList<>();
 
@@ -63,7 +74,7 @@ class UnionConsumer implements Consumer {
                 subPlans.add(Merge.mergeToHandlerNoDirectResult(subPlan, context.plannerContext()));
             }
 
-            final List<Symbol> outputs = unionSelect.querySpec().outputs();
+            List<? extends Symbol> outputs = unionSelect.querySpec().outputs();
             Optional<OrderBy> rootOrderBy = unionSelect.querySpec().orderBy();
             List<Projection> projections = ImmutableList.of();
             if (limits.hasLimit() || rootOrderBy.isPresent()) {
@@ -86,9 +97,61 @@ class UnionConsumer implements Consumer {
                 limits.finalLimit(),
                 limits.offset(),
                 projections,
-                unionSelect.querySpec().outputs(),
+                outputs,
                 Collections.emptyList());
-            return new UnionPlan(unionPhase, subPlans);
+            Plan plan = new UnionPlan(unionPhase, subPlans);
+
+            assert ExecutionPhases.executesOnHandler(
+                context.plannerContext().handlerNode(),
+                plan.resultDescription().nodeIds())
+                : "subQuery must not have a distributed result";
+
+            if (fetchPhaseBuilder == null) {
+                // no fetch required
+                return plan;
+            }
+
+            FetchPushDown.PhaseAndProjection fetchPhaseAndProjection = fetchPhaseBuilder.build(context.plannerContext());
+            plan.addProjection(fetchPhaseAndProjection.projection, null, null, null, null);
+            return new QueryThenFetch(plan, fetchPhaseAndProjection.phase);
         }
+    }
+
+    private static class UnionFlatteningVisitor extends AnalyzedRelationVisitor<UnionFlatteningVisitorContext, Void> {
+
+        private static final UnionFlatteningVisitor INSTANCE = new UnionFlatteningVisitor();
+
+        @Override
+        public Void visitQueriedTable(QueriedTable relation, UnionFlatteningVisitorContext context) {
+            context.relations.add(relation);
+            return null;
+        }
+
+        @Override
+        public Void visitQueriedDocTable(QueriedDocTable relation, UnionFlatteningVisitorContext context) {
+            context.relations.add(relation);
+            return null;
+        }
+
+        @Override
+        public Void visitMultiSourceSelect(MultiSourceSelect relation, UnionFlatteningVisitorContext context) {
+            context.relations.add(relation);
+            return null;
+        }
+
+        public Void visitQueriedSelectRelation(QueriedSelectRelation relation, UnionFlatteningVisitorContext context) {
+            context.relations.add(relation);
+            return null;
+        }
+
+        public Void visitTwoRelationsUnion(TwoRelationsUnion twoRelationsUnion, UnionFlatteningVisitorContext context) {
+            process(twoRelationsUnion.first(), context);
+            process(twoRelationsUnion.second(), context);
+            return null;
+        }
+    }
+
+    private static class UnionFlatteningVisitorContext {
+        private final List<QueriedRelation> relations = new ArrayList<>();
     }
 }

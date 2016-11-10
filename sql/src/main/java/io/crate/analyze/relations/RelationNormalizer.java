@@ -22,6 +22,7 @@
 
 package io.crate.analyze.relations;
 
+import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableList;
@@ -413,11 +414,11 @@ final class RelationNormalizer {
             Optional<OrderBy> mergedOrderBy = originalMergedQuerySpec.orderBy();
             if (mergedOrderBy.isPresent()) {
                 final List<Symbol> outputs = originalMergedQuerySpec.outputs();
-                mergedOrderBy.get().replace(new com.google.common.base.Function<Symbol, Symbol>() {
+                mergedOrderBy.get().replace(new Function<Symbol, Symbol>() {
                     @Nullable
                     @Override
-                    public Symbol apply(@Nullable Symbol symbol) {
-                        return InputColumn.fromSymbol(symbol, outputs);
+                    public Symbol apply(@Nullable Symbol input) {
+                        return FieldToInputColumnsResolver.INSTANCE.process(input, outputs);
                     }
                 });
                 unionQuerySpec.orderBy(mergedOrderBy.get());
@@ -484,6 +485,33 @@ final class RelationNormalizer {
             twoTableUnion.first((QueriedRelation) process(twoTableUnion.first(), context));
             twoTableUnion.second((QueriedRelation) process(twoTableUnion.second(), context));
             return twoTableUnion;
+        }
+    }
+
+    private static class FieldToInputColumnsResolver extends ReplacingSymbolVisitor<List<Symbol>> {
+
+        private static final FieldToInputColumnsResolver INSTANCE = new FieldToInputColumnsResolver(ReplaceMode.COPY);
+
+        private FieldToInputColumnsResolver(ReplaceMode mode) {
+            super(mode);
+        }
+
+        @Override
+        public Symbol visitFunction(io.crate.analyze.symbol.Function symbol, List<Symbol> context) {
+            Symbol newFunction = InputColumn.fromSymbol(symbol, context);
+            if (newFunction == null) {
+                return super.visitFunction(symbol, context);
+            }
+            return newFunction;
+        }
+
+        @Override
+        public Symbol visitSymbol(Symbol symbol, List<Symbol> context) {
+            Symbol newSymbol = InputColumn.fromSymbol(symbol, context);
+            if (newSymbol == null) {
+                return symbol;
+            }
+            return newSymbol;
         }
     }
 }
