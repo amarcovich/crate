@@ -167,7 +167,7 @@ public class ValueNormalizerTest extends CrateUnitTest {
     @Test
     public void testNormalizeDynamicObjectWithRestrictedAdditionalColumn() throws Exception {
         expectedException.expect(IllegalArgumentException.class);
-        expectedException.expectMessage("Column ident must not start with '_'");
+        expectedException.expectMessage("Column name must not start with '_'");
         Reference objInfo = userTableInfo.getReference(new ColumnIdent("dyn"));
         Map<String, Object> map = new HashMap<>();
         map.put("_invalid_column_name", 0);

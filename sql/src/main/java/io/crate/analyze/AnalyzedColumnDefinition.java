@@ -70,8 +70,8 @@ public class AnalyzedColumnDefinition {
     private Expression generatedExpression;
     private final static Set<String> NO_DOC_VALUES_SUPPORT = Sets.newHashSet("object", "geo_shape");
 
-    public static void checkName(String name) {
-        Preconditions.checkArgument(!name.startsWith("_"), "Column ident must not start with '_'");
+    public static void validateName(String name) {
+        Preconditions.checkArgument(!name.startsWith("_"), "Column name must not start with '_'");
         if (ColumnIdent.INVALID_COLUMN_NAME_PREDICATE.apply(name)) {
             throw new InvalidColumnNameException(name);
         }
@@ -82,7 +82,7 @@ public class AnalyzedColumnDefinition {
     }
 
     public void name(String name) {
-        checkName(name);
+        validateName(name);
         this.name = name;
         if (this.parent != null) {
             this.ident = ColumnIdent.getChild(this.parent.ident, name);

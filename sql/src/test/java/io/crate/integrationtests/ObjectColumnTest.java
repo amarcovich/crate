@@ -301,12 +301,4 @@ public class ObjectColumnTest extends SQLTransportIntegrationTest {
         assertThat((Map<String, Object>) response.rows()[0][0], Matchers.<String, Object>hasEntry("nested", 2));
     }
 
-    @Test
-    public void testAddRestrictedColumnName() throws Exception {
-        expectedException.expect(SQLActionException.class);
-        expectedException.expectMessage("Validation failed for foo: Column ident must not start with '_'");
-        execute("create table test (foo object)");
-        ensureYellow();
-        execute("insert into test (foo) values ({_bar=3})");
-    }
 }

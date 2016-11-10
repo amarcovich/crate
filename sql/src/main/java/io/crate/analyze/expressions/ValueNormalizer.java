@@ -116,7 +116,7 @@ public class ValueNormalizer {
     @SuppressWarnings("unchecked")
     private void normalizeObjectValue(Map<String, Object> value, Reference info) {
         for (Map.Entry<String, Object> entry : value.entrySet()) {
-            AnalyzedColumnDefinition.checkName(entry.getKey());
+            AnalyzedColumnDefinition.validateName(entry.getKey());
             ColumnIdent nestedIdent = ColumnIdent.getChild(info.ident().columnIdent(), entry.getKey());
             TableInfo tableInfo = schemas.getTableInfo(info.ident().tableIdent());
             Reference nestedInfo = tableInfo.getReference(nestedIdent);
