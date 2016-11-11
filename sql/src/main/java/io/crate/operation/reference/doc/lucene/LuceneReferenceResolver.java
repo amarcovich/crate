@@ -57,6 +57,8 @@ public class LuceneReferenceResolver implements ReferenceResolver<LuceneCollecto
                     String.format(Locale.ENGLISH, "_source expression does not support subscripts %s",
                         refInfo.ident().columnIdent().fqn()));
             }
+        } else if (UidCollectorExpression.COLUMN_NAME.equals(refInfo.ident().columnIdent().name())) {
+            return new UidCollectorExpression();
         } else if (IdCollectorExpression.COLUMN_NAME.equals(refInfo.ident().columnIdent().name())) {
             return new IdCollectorExpression();
         } else if (DocCollectorExpression.COLUMN_NAME.equals(refInfo.ident().columnIdent().name())) {
